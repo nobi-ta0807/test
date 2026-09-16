@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ドラクエHPトラッカー</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-[#1a1a8a] font-mono">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function HPTracker() {
+  const [maxHp, setMaxHp] = useState(0);
+  const [hp, setHp] = useState(0);
+  const [realHp, setRealHp] = useState(0);
+  const [hpInput, setHpInput] = useState("");
+  const [changeInput, setChangeInput] = useState("");
+  const [log, setLog] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    const animate = () => {
+      setHp(current => {
+        if (current === realHp) return current;
+        const diff = realHp - current;
+        const step = Math.max(1, Math.ceil(Math.abs(diff) * 0.12));
+        const next = current + (diff > 0 ? step : -step);
+        if ((diff > 0 && next >= realHp) || (diff < 0 && next <= realHp)) return realHp;
+        return next;
+      });
+      rafRef.current = requestAnimationFrame(animate);
+    };
+    if (hp !== realHp) rafRef.current = requestAnimationFrame(animate);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, [realHp]);
+
+  const applyMaxHp = () => {
+    const n = Math.max(0, Number(hpInput) || 0);
+    setMaxHp(n);
+    setRealHp(n);
+    setHp(n);
+    setLog([]);
+    setChangeInput("");
+    setHistory([]);
+    setRedoStack([]);
+  };
+
+  const addAction = (action) => {
+    setHistory(prev => [{hp: realHp, log: [...log]}, ...prev]);
+    setRedoStack([]);
+    let newReal = realHp;
+    let logText = "";
+    if (action === "ベホマ") {
+      newReal = maxHp;
+      logText = `💖 回 : ベホマ / HP ${realHp} → ${newReal}`;
+    } else if (action === "即死") {
+      newReal = 0;
+      logText = `💥 与 : 即死 / HP ${realHp} → ${newReal}`;
+    }
+    setRealHp(newReal);
+    setLog(prev => [logText, ...prev]);
+  };
+
+  const handleChangeKeyDown = (e) => {
+    if (e.key !== "Enter") return;
+    let val = changeInput.trim();
+    if (val === "") return;
+
+    // 整数のみ有効（マイナスもOK）、ベホマ/即死は許可
+    if (!/^(-?\d+|ベホマ|即死)$/.test(val)) {
+      setChangeInput("");
+      return;
+    }
+
+    setHistory(prev => [{hp: realHp, log: [...log]}, ...prev]);
+    setRedoStack([]);
+
+    let newReal = realHp;
+    let logText = "";
+
+    if (val === "ベホマ") {
+      newReal = maxHp;
+      logText = `💖 回 : ベホマ / HP ${realHp} → ${newReal}`;
+    } else if (val === "即死") {
+      newReal = 0;
+      logText = `💥 与 : 即死 / HP ${realHp} → ${newReal}`;
+    } else {
+      let num = Math.floor(Number(val)); // 小数は切り捨て
+      const logVal = num;
+      num = Math.max(-maxHp, Math.min(maxHp, num));
+      newReal = Math.min(maxHp, Math.max(0, realHp - num));
+      const icon = num >= 0 ? '💥' : '💖';
+      logText = `${icon} ${logVal >= 0 ? '与' : '回'} : ${Math.abs(logVal)} / HP ${realHp} → ${newReal}`;
+    }
+
+    setRealHp(newReal);
+    setLog(prev => [logText, ...prev]);
+    setChangeInput("");
+  };
+
+  const undo = () => {
+    if (history.length === 0) return;
+    const [last, ...rest] = history;
+    setRedoStack(prev => [{hp: realHp, log: [...log]}, ...prev]);
+    setRealHp(last.hp);
+    setLog(last.log);
+    setHistory(rest);
+  };
+
+  const redo = () => {
+    if (redoStack.length === 0) return;
+    const [last, ...rest] = redoStack;
+    setHistory(prev => [{hp: realHp, log: [...log]}, ...prev]);
+    setRealHp(last.hp);
+    setLog(last.log);
+    setRedoStack(rest);
+  };
+
+  const resetAll = () => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    setMaxHp(0);
+    setHp(0);
+    setRealHp(0);
+    setHpInput("");
+    setChangeInput("");
+    setLog([]);
+    setHistory([]);
+    setRedoStack([]);
+  };
+
+  return (
+    <div className="min-h-screen p-6 bg-[#1a1a8a] flex flex-col items-center gap-6 text-white font-mono">
+      <h1 className="text-3xl font-bold text-yellow-300 drop-shadow-[2px_2px_0px_#000]">ドラクエHPトラッカー</h1>
+      <div className="grid gap-4 w-full max-w-md">
+
+        <div className="p-4 bg-[#003c78] border-[6px] border-black rounded-md shadow-[0_0_0_3px_#7ec0ff]">
+          <label className="block mb-2 font-bold text-yellow-200">モンスターの最大HP</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              className="flex-1 p-2 rounded bg-[#c0c0ff] text-black font-bold border-2 border-[#7ec0ff]"
+              value={hpInput}
+              onChange={(e) => setHpInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') applyMaxHp(); }}
+              placeholder="入力してください"
+            />
+            <button className="px-3 py-2 bg-[#ffd36b] text-black font-bold rounded border-2 border-black" onClick={applyMaxHp}>設定</button>
+          </div>
+        </div>
+
+        <div className="p-4 bg-[#003c78] border-[6px] border-black rounded-md shadow-[0_0_0_3px_#7ec0ff] relative">
+          <label className="block mb-2 font-bold text-yellow-200">与えたダメージ（マイナスで回復）</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              className="flex-1 p-2 rounded bg-[#c0c0ff] text-black font-bold border-2 border-[#7ec0ff]"
+              value={changeInput}
+              onChange={(e) => setChangeInput(e.target.value)}
+              onKeyDown={handleChangeKeyDown}
+              placeholder="入力してEnter"
+            />
+            <div className="flex flex-col gap-1">
+              <button className="px-2 py-1 text-xs bg-[#7bff7b] text-black font-bold rounded border-2 border-black" onClick={() => addAction("ベホマ")}>ベホマ</button>
+              <button className="px-2 py-1 text-xs bg-[#ff7b7b] text-black font-bold rounded border-2 border-black" onClick={() => addAction("即死")}>即死</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-[#003c78] border-[6px] border-black rounded-md shadow-[0_0_0_3px_#7ec0ff] text-center">
+          <p className="text-2xl font-bold text-yellow-300 drop-shadow-[2px_2px_0px_#000] tracking-wide">残りHP：{hp}</p>
+          <div className="mt-3 bg-black h-6 w-full rounded relative border-2 border-[#7ec0ff]">
+            <div className="absolute left-0 top-0 h-full rounded"
+                 style={{width: maxHp > 0 ? `${Math.max(0, (hp / maxHp) * 100)}%` : "0%", background: "linear-gradient(90deg,#ffd36b,#ff9b3b)", boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.4)"}} />
+          </div>
+          {hp === 0 && maxHp > 0 && <p className="mt-3 text-lg font-extrabold text-red-400 drop-shadow-[1px_1px_0px_#000]">モンスターをやっつけた！</p>}
+        </div>
+
+        <div className="p-4 bg-[#003c78] border-[6px] border-black rounded-md shadow-[0_0_0_3px_#7ec0ff]">
+          <div className="flex justify-between mb-3">
+            <button className={`px-3 py-2 font-bold rounded border-2 border-black ${history.length === 0 ? 'bg-gray-700 text-gray-400' : 'bg-[#7bff7b] text-black'}`} onClick={undo} disabled={history.length === 0}>前に戻す</button>
+            <button className={`px-3 py-2 font-bold rounded border-2 border-black ${redoStack.length === 0 ? 'bg-gray-700 text-gray-400' : 'bg-[#7bbfff] text-black'}`} onClick={redo} disabled={redoStack.length === 0}>やり直す</button>
+            <button className="px-3 py-2 bg-[#ff7b7b] text-black font-bold rounded border-2 border-black" onClick={resetAll}>リセット</button>
+          </div>
+          <label className="block mb-2 font-bold text-yellow-200">ログ（新しい順）</label>
+          <div className="min-h-[48px] p-2 bg-black text-yellow-100 rounded border-2 border-[#7ec0ff] overflow-y-auto max-h-48">
+            {log.length === 0 ? <div className="text-sm text-gray-300">まだダメージを与えていません。</div> :
+              <div className="flex flex-col gap-1">{log.map((l, i) => (<div key={i} className="text-sm">{l}</div>))}</div>
+            }
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<HPTracker />);
+</script>
+</body>
+</html>
